@@ -14,7 +14,7 @@
 from qgis.core import QgsCoordinateReferenceSystem,  QgsCoordinateTransform
 from qgis.PyQt import uic
 from qgis.PyQt import QtNetwork
-from qgis.PyQt.QtCore import pyqtSlot,  Qt,  QUrl,  QFileInfo
+from qgis.PyQt.QtCore import pyqtSlot,  Qt,  QUrl,  QFileInfo, QSettings
 from qgis.PyQt.QtGui import QIntValidator
 from qgis.PyQt.QtWidgets import QDialog,  QMessageBox,  QTableWidgetItem,  QProgressBar,  QApplication,  QFileDialog
 
@@ -26,10 +26,8 @@ from osgeo import gdal
 from pathlib import Path
 from os.path import expanduser
 
-FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'form.ui'))
-
-        
+FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'form.ui'), resource_suffix='')
+    
 class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
     """
     Class documentation goes here.
@@ -45,6 +43,19 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         super(SRTMtoDTEDDialog, self).__init__(parent)
         self.setupUi(self)
         self.iface = iface
+        
+        self.settings = QSettings()
+        if self.settings.value("InputFolder"):
+            self.lneInputDataset.setText(self.settings.value("InputFolder"))
+        if self.settings.value("OutputFolder"):
+            self.lneOutputFolder.setText(self.settings.value("OutputFolder"))        
+        #if self.settings.value("Level0"):
+        #    self.cbxLevel0.setCheckState(self.settings.value("Level0"))   
+        #if self.settings.value("Level1"):
+        #    self.cbxLevel1.setCheckState(self.settings.value("Level1"))   
+        #if self.settings.value("Level2"):
+        #    self.cbxLevel2.setCheckState(self.settings.value("Level2"))   
+        
         self.success = False
         self.cancelled = False
         self.dir = tempfile.gettempdir()
@@ -53,10 +64,17 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         self.lne_west.valueChanged.connect(self.westBoundChanged)
         self.lne_north.valueChanged.connect(self.northBoundChanged)
         self.lne_south.valueChanged.connect(self.southBoundChanged)
+                
+        self.lneInputDataset.textChanged.connect(self.inputFolderChanged)
+        self.lneOutputFolder.textChanged.connect(self.outputFolderChanged)
+        
+        self.cbxLevel0.stateChanged.connect(self.levelsChanged)
+        self.cbxLevel1.stateChanged.connect(self.levelsChanged)
+        self.cbxLevel2.stateChanged.connect(self.levelsChanged)
         
         self.overall_progressBar.setValue(0)
         self.row_count = 0
-                
+               
     @pyqtSlot()
     def on_button_box_rejected(self):
         """
@@ -165,17 +183,47 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         self.btnOutputFolder.setEnabled(False)
         self.lneInputDataset.setEnabled(False)
         self.lneOutputFolder.setEnabled(False)
-    
-    # Writes validation errors to self.validationErrors[]
+        self.lne_west.setEnabled(False)
+        self.lne_east.setEnabled(False)
+        self.lne_south.setEnabled(False)
+        self.lne_north.setEnabled(False)
+        self.btn_extent.setEnabled(False)
+        self.cbxLevel0.setEnabled(False)
+        self.cbxLevel1.setEnabled(False)
+        self.cbxLevel2.setEnabled(False)
+        
+    def unlockUI(self):
+        self.button_box.setEnabled(True)
+        self.btnConvert.setEnabled(True)
+        self.btnInputDataset.setEnabled(True)
+        self.btnOutputFolder.setEnabled(True)
+        self.lneInputDataset.setEnabled(True)
+        self.lneOutputFolder.setEnabled(True)
+        self.lne_west.setEnabled(True)
+        self.lne_east.setEnabled(True)
+        self.lne_south.setEnabled(True)
+        self.lne_north.setEnabled(True)
+        self.btn_extent.setEnabled(True)
+        self.cbxLevel0.setEnabled(True)
+        self.cbxLevel1.setEnabled(True)
+        self.cbxLevel2.setEnabled(True)
+        
     def valid(self):
-        self.validationErrors = []
+        validationErrors = []
         inputDataSet = self.lneInputDataset.text()
         outputFolder = self.lneOutputFolder.text()
     
         if not os.path.isdir(inputDataSet):
-            self.validationErrors.append("'Input Dataset' is not an existing directory")
+            validationErrors.append("'Input Dataset' is not an existing directory")
+        
+        if not os.path.isdir(outputFolder):
+            validationErrors.append("'Output Folder' is not an existing directory")
     
-        if len(self.validationErrors) != 0:
+        if not self.cbxLevel0.isChecked() and not self.cbxLevel1.isChecked() and not self.cbxLevel2.isChecked():
+            validationErrors.append("At least one export level must be selected")
+    
+        if len(validationErrors) != 0:
+            QMessageBox.warning(self, "Invalid Input", 'The following issues were found:\n\n- ' + '\n- '.join(validationErrors)) 
             return False
         return True
          
@@ -213,65 +261,50 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
                                                  QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
 
         self.lneOutputFolder.setText(self.dir)  
-            
-    def init_progress(self):
-        self.overall_progressBar.setMaximum(self.n_tiles)
-        self.overall_progressBar.setValue(0)
-        self.lbl_file_download.setText((self.tr("Download-Progress: %s of %s images") % (0,  self.n_tiles)))
-                
-    def set_progress(self,  akt_val=None,  all_val=None):
-        if all_val == None:
-            progress_value = self.overall_progressBar.value() + 1
-            self.overall_progressBar.setValue(progress_value)
-            self.lbl_file_download.setText((self.tr("Download-Progress: %s of %s images") % (progress_value,  self.n_tiles)))
-                    
-            if progress_value == self.n_tiles:
-                self.lbl_file_download.setText((self.tr("Download-Progress: %s of %s images") % (progress_value,  self.n_tiles)))
-                self.download_finished(show_message=True)
-        else:
-            self.overall_progressBar.setMaximum(all_val)
-            self.overall_progressBar.setValue(akt_val)
     
+    def inputFolderChanged(self, path):
+        self.settings.setValue("InputFolder", path)
+        
+    def outputFolderChanged(self, path):
+        self.settings.setValue("OutputFolder", path)
+    
+    def levelsChanged(self, value):
+        self.settings.setValue("Level0", self.cbxLevel0.checkState())
+        self.settings.setValue("Level1", self.cbxLevel1.checkState())
+        self.settings.setValue("Level2", self.cbxLevel2.checkState())
+    
+    def convertClosed(self):
+        self.unlockUI()
+
     # This will be called as a thread!
     def convert(self):
         inDir = self.lneInputDataset.text()
-        outDir = 'G:/Data/02_Geographical/01_Maps/03_DTED/'
-        level = 0
-        n = 20
-        e = 20
-        s = 0
-        w = 0
-
+        outDir = self.lneOutputFolder.text()
+        
         TILE_NAME = 0
         TILE_EXISTS = 1
         TILE_LAT = 2
         TILE_LON = 3
         TILE_PATH = 4
 
-        kwargs0 = {
+        kwargs = []
+        kwargs.append({
             'format': 'DTED',
             'width': 121,
             'height': 121
-        }
+        })
 
-        kwargs1 = {
+        kwargs.append({
             'format': 'DTED',
             'width': 601,
             'height': 1201
-        }
+        })
 
-        kwargs2 = {
+        kwargs.append({
             'format': 'DTED',
             'width': 1801,
             'height': 3601
-        }
-
-        if level == 0:
-            kwargs = kwargs0
-        elif level == 1:
-            kwargs = kwargs1
-        else:
-            kwargs = kwargs2
+        })
 
         def getLongitudeString(lon):
             if lon < 10 and lon >= 0:
@@ -300,37 +333,46 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         def getCoordinateString(lat, lon):
             return getLatitudeString(lat) + getLongitudeString(lon)
 
-        print('Preparing metadata')
+        # print('Preparing metadata')
         tiles = []
-        for lat in range(s, n):
-            for lon in range(w, e):
+        for lat in range(self.lne_south.value(), self.lne_north.value()):
+            for lon in range(self.lne_west.value(), self.lne_east.value()):
                 tile = {}
                 tile[TILE_NAME] = getCoordinateString(lat, lon)
-                tile[TILE_PATH] = inDir + tile[TILE_NAME] + '.hgt'
+                tile[TILE_PATH] = inDir + '/' + tile[TILE_NAME] + '.hgt'
                 tile[TILE_EXISTS] = os.path.isfile(tile[TILE_PATH])
                 tile[TILE_LAT] = lat
                 tile[TILE_LON] = lon
                 if tile[TILE_EXISTS]:
                     tiles.append(tile)
+        
+        levels = []
+        if self.cbxLevel0.isChecked():
+            levels.append(0)
+        if self.cbxLevel1.isChecked():
+            levels.append(1)
+        if self.cbxLevel2.isChecked():
+            levels.append(2)
+        
+        # print('Converting tiles')
+        self.overall_progressBar.setMaximum(len(tiles) * len(levels))
+        self.overall_progressBar.setValue(0)
+        for level in levels:
+            for tile in tiles:
+                if tile[TILE_EXISTS]:
+                    destinationPath = outDir + '/DTED' + str(level) + '/DTED/' + getLongitudeString(tile[TILE_LON]) + '/'
+                    destination = destinationPath + getLatitudeString(tile[TILE_LAT]) + '.dt' + str(level)
+                    Path(destinationPath).mkdir(parents=True, exist_ok=True)
+                    if not os.path.isfile(destination):
+                        gdal.Translate(destination, tile[TILE_PATH], **kwargs[level]) != None
+                self.overall_progressBar.setValue(self.overall_progressBar.value() + 1)
 
-        print('Converting tiles')
-        count = 0
-        for tile in tiles:
-            if tile[TILE_EXISTS]:
-                destinationPath = outDir + 'DTED' + str(level) + '/DTED/' + getLongitudeString(tile[TILE_LON]) + '/'
-                destination = destinationPath + getLatitudeString(tile[TILE_LAT]) + '.dt' + str(level)
-                Path(destinationPath).mkdir(parents=True, exist_ok=True)
-                if not os.path.isfile(destination):
-                    gdal.Translate(destination, tile[TILE_PATH], **kwargs) != None
-                count += 1
-                if count % 10 == 0:
-                    print(str(count))
-
-        print('Cleanup')
+        # print('Cleanup')
         for root, dirs, files in os.walk(outDir):
             for currentFile in files:
                 exts = ('.xml')
                 if currentFile.lower().endswith(exts):
                     os.remove(os.path.join(root, currentFile))
-
-        print('Done')
+        
+        self.unlockUI()
+        

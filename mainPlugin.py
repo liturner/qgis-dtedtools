@@ -24,7 +24,7 @@ from qgis.PyQt.QtCore import QSettings, QTranslator, qVersion, QCoreApplication
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 # Initialize Qt resources from file resources.py
-from .resources_rc import *
+from .resources import *
 # Import the code for the dialog
 from .form import SRTMtoDTEDDialog
 
@@ -155,7 +155,7 @@ class DTEDTools:
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
 
-        icon_path = ':/plugins/DTEDTools/icon.png'
+        icon_path = ':/TurnerTech/DTEDTools/resources/Icon-TurnerTech.png'
         self.add_action(
             icon_path,
             text=self.tr(u'SRTM to DTED'),

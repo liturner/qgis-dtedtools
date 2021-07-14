@@ -1,5 +1,5 @@
 <RCC>
-    <qresource prefix="/plugins/SRTM-Downloader" >
-        <file>icon.png</file>
-    </qresource>
+  <qresource prefix="/TurnerTech/DTEDTools">
+    <file>resources/Icon-TurnerTech.png</file>
+  </qresource>
 </RCC>
