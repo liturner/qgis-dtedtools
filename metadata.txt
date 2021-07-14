@@ -1,0 +1,40 @@
+# This file contains metadata for your plugin. Since 
+# version 2.0 of QGIS this is the proper way to supply 
+# information about a plugin. The old method of 
+# embedding metadata in __init__.py will 
+# is no longer supported since version 2.0.
+# This file should be included when you package your plugin.# Mandatory items:
+
+[general]
+name=DTED Tools
+qgisMinimumVersion=3.00
+qgisMaximumVersion=3.99
+description=A few usefull tools for DTED and DMED handling
+version=1.0
+author=Luke Ian Turner
+email=luke.ian.turner@outlook.de
+about=A few usefull tools for DTED and DMED handling
+tracker=
+repository=
+# End of mandatory metadata
+
+# Recommended items:
+
+# Uncomment the following line and add your changelog:
+changelog=
+  1.1
+  - Upcoming
+  1.0
+  - Just starting
+    
+# Tags are comma separated with spaces allowed
+tags=python,dted,dmed,dem
+homepage=
+category=Plugins
+icon=icon.png
+# experimental flag
+experimental=False
+
+# deprecated flag (applies to the whole plugin, not just a single version)
+deprecated=False
+
