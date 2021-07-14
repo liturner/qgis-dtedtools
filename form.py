@@ -49,10 +49,10 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         self.cancelled = False
         self.dir = tempfile.gettempdir()
                 
-        self.lne_east.textChanged.connect(self.coordinates_valid)
-        self.lne_west.textChanged.connect(self.coordinates_valid)
-        self.lne_north.textChanged.connect(self.coordinates_valid)
-        self.lne_south.textChanged.connect(self.coordinates_valid)
+        self.lne_east.valueChanged.connect(self.eastBoundChanged)
+        self.lne_west.valueChanged.connect(self.westBoundChanged)
+        self.lne_north.valueChanged.connect(self.northBoundChanged)
+        self.lne_south.valueChanged.connect(self.southBoundChanged)
         
         self.overall_progressBar.setValue(0)
         self.row_count = 0
@@ -82,11 +82,21 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         self.lne_south.setText(str(int(math.floor(extent.yMinimum()))))
         self.lne_north.setText(str(math.ceil(extent.yMaximum())))
 
-    def coordinates_valid(self,  text):
-        if self.lne_west.text() != '' and self.lne_east.text() != '' and self.lne_south.text() != '' and self.lne_north.text() != '':
-            self.btnConvert.setEnabled(True)
-        else:
-            self.btnConvert.setEnabled(False)
+    def southBoundChanged(self, value):
+        if self.lne_north.value() <= value:
+            self.lne_north.setValue(value + 1)
+        
+    def northBoundChanged(self, value):
+        if self.lne_south.value() >= value:
+            self.lne_south.setValue(value - 1)
+    
+    def eastBoundChanged(self, value):
+        if self.lne_west.value() >= value:
+            self.lne_west.setValue(value - 1)
+        
+    def westBoundChanged(self, value):
+        if self.lne_east.value() <= value:
+            self.lne_east.setValue(value + 1)
 
     # Delete This at some point
     def get_tiles(self):
