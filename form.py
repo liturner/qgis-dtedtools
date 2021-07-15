@@ -276,6 +276,30 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
     def convertClosed(self):
         self.unlockUI()
 
+    def getKwargs(self, level, lat, lon):
+        kwargs = {'format': 'DTED'}
+        if lat >= 50 or lat <= -50:
+            if level == 0:
+                kwargs['width'] = 61
+                kwargs['height'] = 121
+            elif level == 1:
+                kwargs['width'] = 601
+                kwargs['height'] = 1201
+            elif level == 2:
+                kwargs['width'] = 1801
+                kwargs['height'] = 3601
+        else:
+            if level == 0:
+                kwargs['width'] = 121
+                kwargs['height'] = 121
+            elif level == 1:
+                kwargs['width'] = 1201
+                kwargs['height'] = 1201
+            elif level == 2:
+                kwargs['width'] = 3601
+                kwargs['height'] = 3601
+        return kwargs
+
     # This will be called as a thread!
     def convert(self):
         inDir = self.lneInputDataset.text()
@@ -285,26 +309,7 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         TILE_EXISTS = 1
         TILE_LAT = 2
         TILE_LON = 3
-        TILE_PATH = 4
-
-        kwargs = []
-        kwargs.append({
-            'format': 'DTED',
-            'width': 121,
-            'height': 121
-        })
-
-        kwargs.append({
-            'format': 'DTED',
-            'width': 601,
-            'height': 1201
-        })
-
-        kwargs.append({
-            'format': 'DTED',
-            'width': 1801,
-            'height': 3601
-        })
+        TILE_PATH = 4       
 
         def getLongitudeString(lon):
             if lon < 10 and lon >= 0:
@@ -355,6 +360,10 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
             levels.append(2)
         
         # print('Converting tiles')
+        
+        ## README: http://osgeo-org.1560.x6.nabble.com/Converting-USGSDEM-into-GTOP30-DEM-or-DTED-td3754489.html
+        
+        
         self.overall_progressBar.setMaximum(len(tiles) * len(levels))
         self.overall_progressBar.setValue(0)
         for level in levels:
@@ -364,7 +373,7 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
                     destination = destinationPath + getLatitudeString(tile[TILE_LAT]) + '.dt' + str(level)
                     Path(destinationPath).mkdir(parents=True, exist_ok=True)
                     if not os.path.isfile(destination):
-                        gdal.Translate(destination, tile[TILE_PATH], **kwargs[level]) != None
+                        gdal.Translate(destination, tile[TILE_PATH], **self.getKwargs(level, tile[TILE_LAT], tile[TILE_LON])) != None
                 self.overall_progressBar.setValue(self.overall_progressBar.value() + 1)
 
         # print('Cleanup')
