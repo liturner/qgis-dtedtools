@@ -14,7 +14,7 @@
 from qgis.core import QgsCoordinateReferenceSystem,  QgsCoordinateTransform
 from qgis.PyQt import uic
 from qgis.PyQt import QtNetwork
-from qgis.PyQt.QtCore import pyqtSlot,  Qt,  QUrl,  QFileInfo, QSettings
+from qgis.PyQt.QtCore import pyqtSlot,  Qt,  QUrl,  QFileInfo, QSettings, QRunnable, QThreadPool
 from qgis.PyQt.QtGui import QIntValidator
 from qgis.PyQt.QtWidgets import QDialog,  QMessageBox,  QTableWidgetItem,  QProgressBar,  QApplication,  QFileDialog
 
@@ -226,6 +226,9 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
             QMessageBox.warning(self, "Invalid Input", 'The following issues were found:\n\n- ' + '\n- '.join(validationErrors)) 
             return False
         return True
+        
+    def validForDMED(self):
+        return True
          
     @pyqtSlot()
     def on_btnConvert_clicked(self):
@@ -237,6 +240,15 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
             
             self.workerThread = threading.Thread(target=self.convert)
             self.workerThread.start()
+            
+    @pyqtSlot()
+    def btnGenerateDMED(self):
+        if self.validForDMED():
+            self.lockUI()
+            
+            pool = QThreadPool.globalInstance()
+            runnable = GenerateDMEDTask(self.lneOutputFolder.text())
+            pool.start(runnable)
 
     @pyqtSlot()
     def on_btnInputDataset_clicked(self):
@@ -277,7 +289,9 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         self.unlockUI()
 
     def getKwargs(self, level, lat, lon):
-        kwargs = {'format': 'DTED'}
+        kwargs = {
+            'format': 'DTED'
+        }
         if lat >= 50 or lat <= -50:
             if level == 0:
                 kwargs['width'] = 61
@@ -384,4 +398,173 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
                     os.remove(os.path.join(root, currentFile))
         
         self.unlockUI()
+
+
+class DMEDHelper:
+    def __init__(self, northBound, southBound, eastBound, westBound):
+        self.northBound = northBound
+        self.southBound = southBound
+        self.eastBound = eastBound
+        self.westBound = westBound
+        self.width = eastBound - westBound
+        self.height = northBound - southBound
+        self.size = self.width * self.height
+        self.buffer = [' '] * (394 * self.size + 394)
+        self.insert(0, self.getMBR())
+    
+    def insert(self, startIndex, value):
+        valueString = str(value)
+        count = 0
+        for char in valueString:
+            self.buffer[startIndex + count] = char
+            count += 1
+    
+    def getMBR(self):
+        return self.getLatitudeString(self.southBound) + self.getLatitudeString(self.northBound) + self.getLongitudeString(self.westBound) + self.getLongitudeString(self.eastBound)
+
+    def getLongitudeString(self, lon):
+        if lon < 10 and lon >= 0:
+            return "E00%s" % lon
+        elif lon >= 10 and lon < 100:
+            return "E0%s" % lon
+        elif lon >= 100:
+            return "E%s" % lon
+        elif lon > -10 and lon < 0:
+            return "W00%s" % abs(lon)
+        elif lon <= -10 and lon > -100:
+            return "W0%s" % abs(lon)
+        elif lon <= -100:
+            return "W%s" % abs(lon)
+
+    def getLatitudeString(self, lat):
+        if lat < 10 and lat >= 0:
+            return "N0%s" % lat
+        elif lat >= 10 and lat < 100:
+            return "N%s" % lat
+        elif lat > -10 and lat < 0:
+            return "S0%s" % abs(lat)
+        elif lat <= -10 and lat > -100:
+            return "S%s" % abs(lat)
+
+    def getCoordinateString(self, lat, lon):
+        return getLatitudeString(lat) + getLongitudeString(lon)
+    
+    # Returns the highest resolution version, or None if not existing
+    def getTile(self, lat, lon, directory):
+        fileName = directory + 'DTED/' + getLongitudeString(lon) + '/' + getLatitudeString(lat)
         
+        if(os.path.isfile(fileName + '.dt2')):
+            return (fileName + '.dt2', gdal.Open(fileName + '.dt2'))
+        elif(os.path.isfile(fileName + '.dt1')):
+            return (fileName + '.dt1', gdal.Open(fileName + '.dt1'))
+        elif(os.path.isfile(fileName + '.dt0')):
+            return (fileName + '.dt0', gdal.Open(fileName + '.dt0'))
+            
+        return (None, None)
+
+    def toString(self):
+        return ''.join(self.buffer)
+    
+    def processTile(self, lat, lon, directory):
+        byteOffset = ((((lon - self.westBound) * self.height) + (lat - self.southBound)) * 394) + 394
+        latLonString = self.getCoordinateString(lat, lon)
+        self.insert(byteOffset, latLonString)
+        
+        # Early out if no more info will be available
+        tilePath, tile = self.getTile(lat, lon, directory)
+        if tile == None:
+            return
+    
+        tileWidth = tile.RasterXSize
+        tileHeight = tile.RasterYSize
+        subTileWidth = int(tileWidth / 4)
+        subTileHeight = int(tileHeight / 4)
+        
+        kwargsSubTile = {
+            'format': 'GTIFF',
+            'srcWin': [0, 0, subTileWidth, subTileHeight]
+        }
+        
+        print(tilePath)
+    
+        # Versioning Numbers, I dont calculate them at the moment
+        self.insert(byteOffset + 7, '01A')
+        
+        # Stats per quadrant (4 x 4 per tile)
+        statsOffset = byteOffset + 10
+        for x in range(0, 4):
+            for y in range(0, 4):
+                
+                kwargsSubTile['srcWin'] = [x * subTileWidth, (3 - y) * subTileHeight, subTileWidth, subTileHeight]
+                subTile = gdal.Translate('G:/temp.dtx', tilePath, **kwargsSubTile)
+                                
+                subTileNo = (x * 4 + y)
+                subTileOffset = statsOffset + subTileNo * 24
+            
+                rasterBand = subTile.GetRasterBand(1)
+                stats = rasterBand.GetStatistics(True, True)
+                
+                min = int(stats[0])
+                max = int(stats[1])
+                mean = int(stats[2])
+                stdDev = int(stats[3])
+                
+                self.insert(subTileOffset, str(min).rjust(6, ' '))
+                self.insert(subTileOffset + 6, str(max).rjust(6, ' '))
+                self.insert(subTileOffset + 12, str(mean).rjust(6, ' '))
+                self.insert(subTileOffset + 19, str(stdDev).rjust(5, ' '))
+
+    def saveAs(self, outFilePath):
+        outString = self.toString()
+        outStringAscii = outString.encode('ascii')
+        with open(inDir + 'DMED', 'wb') as f:
+            f.write(outStringAscii)
+
+class GenerateDMEDTask(QRunnable):
+    
+    def __init__(self, targetDir):
+        super().__init__()
+        this.targetDir = targetDir
+    
+    def run(self):
+        northBound = -1000
+        southBound = 1000
+        eastBound = -1000
+        westBound = 1000
+
+        for root, dirs, files in os.walk(this.targetDir):
+            for currentFile in files:
+                exts = ('.dt0', '.dt1', '.dt2')
+                if currentFile.lower().endswith(exts):
+                    northingStr = currentFile[0:3]
+                    eastingStr = root[-4:]
+                    
+                    northing = int(northingStr[1:])
+                    if(northingStr[0].lower() == 's'):
+                        northing = 0 - northing
+                    
+                    easting = int(eastingStr[1:])
+                    if(eastingStr[0].lower() == 'w'):
+                        easting = 0 - easting
+                    
+                    # The +1 is because its bounds, and the position of a tile is based on the SW corner
+                    if(northing + 1 > northBound):
+                        northBound = northing + 1
+                    if(northing < southBound):
+                        southBound = northing
+                    if(easting + 1 > eastBound):
+                        eastBound = easting + 1
+                    if(easting < westBound):
+                        westBound = easting
+
+        #print('Preparing Buffer')
+        dmed = DMEDHelper(northBound, southBound, eastBound, westBound)
+        for lon in range(dmed.westBound, dmed.eastBound):
+            for lat in range(dmed.southBound, dmed.northBound):
+                dmed.processTile(lat, lon, this.targetDir)
+        #print('Writing DMED')
+        dmed.saveAs(this.targetDir + '/DMED')
+
+        #print('Done')
+
+
