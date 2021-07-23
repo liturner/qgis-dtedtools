@@ -119,6 +119,7 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
     def lockUI(self):
         self.button_box.setEnabled(False)
         self.btnConvert.setEnabled(False)
+        self.btnGenerateDMED.setEnabled(False)
         self.btnInputDataset.setEnabled(False)
         self.btnOutputFolder.setEnabled(False)
         self.lneInputDataset.setEnabled(False)
@@ -135,6 +136,7 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
     def unlockUI(self):
         self.button_box.setEnabled(True)
         self.btnConvert.setEnabled(True)
+        self.btnGenerateDMED.setEnabled(True)
         self.btnInputDataset.setEnabled(True)
         self.btnOutputFolder.setEnabled(True)
         self.lneInputDataset.setEnabled(True)
@@ -168,6 +170,9 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         return True
         
     def validForDMED(self):
+        # TODO Make sure there is no trailing slash!!!!!!!!
+        # Really, its critical in the current code
+        # self.lneOutputFolder.text()
         return True
          
     @pyqtSlot()
@@ -391,7 +396,7 @@ class DMEDHelper:
     
     # REturns the prefered tile resolution based on availability
     def getTile(self, lat, lon, directory):
-        fileName = directory + 'DTED/' + self.getLongitudeString(lon) + '/' + self.getLatitudeString(lat)
+        fileName = directory + '/DTED/' + self.getLongitudeString(lon) + '/' + self.getLatitudeString(lat)
         
         if(os.path.isfile(fileName + '.dt1')):
             return (fileName + '.dt1', gdal.Open(fileName + '.dt1'))
@@ -405,7 +410,7 @@ class DMEDHelper:
     def toString(self):
         return ''.join(self.buffer)
     
-    def processTile(self, lat, lon, directory):
+    def processTile(self, lat, lon, directory):    
         byteOffset = ((((lon - self.westBound) * self.height) + (lat - self.southBound)) * 394) + 394
         latLonString = self.getCoordinateString(lat, lon)
         self.insert(byteOffset, latLonString)
@@ -414,6 +419,8 @@ class DMEDHelper:
         tilePath, tile = self.getTile(lat, lon, directory)
         if tile == None:
             return
+    
+        QgsMessageLog.logMessage("Tile to DMED: " + tilePath, 'DMED Tools', level=Qgis.Info)
     
         tileWidth = tile.RasterXSize
         tileHeight = tile.RasterYSize
@@ -425,7 +432,7 @@ class DMEDHelper:
             'srcWin': [0, 0, subTileWidth, subTileHeight]
         }
         
-        print(tilePath)
+        QgsMessageLog.logMessage(tilePath, 'DMED Tools', level=Qgis.Info)
     
         # Versioning Numbers, I dont calculate them at the moment
         self.insert(byteOffset + 7, '01A')
@@ -474,7 +481,7 @@ class GenerateDMEDTask(QRunnable):
             eastBound = -1000
             westBound = 1000
 
-            #QgsMessageLog.logMessage(self.targetDir, 'DMED Tools', level=Qgis.Info)
+            QgsMessageLog.logMessage("Running DMED generation on folder " + self.targetDir, 'DMED Tools', level=Qgis.Info)
 
             for root, dirs, files in os.walk(self.targetDir):
             
