@@ -332,6 +332,7 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
                     destination = destinationPath + getLatitudeString(tile[TILE_LAT]) + '.dt' + str(level)
                     Path(destinationPath).mkdir(parents=True, exist_ok=True)
                     if not os.path.isfile(destination):
+                        QgsMessageLog.logMessage("Converting to DTED: " + tile[TILE_PATH], 'DMED Tools', level=Qgis.Info)
                         gdal.Translate(destination, tile[TILE_PATH], **self.getKwargs(level, tile[TILE_LAT], tile[TILE_LON])) != None
                 self.overall_progressBar.setValue(self.overall_progressBar.value() + 1)
 
