@@ -158,16 +158,9 @@ class DTEDTools:
         icon_path = ':/TurnerTech/DTEDTools/resources/Icon-TurnerTech.png'
         self.add_action(
             icon_path,
-            text=self.tr(u'SRTM to DTED'),
+            text=self.tr(u'DTED Tools'),
             callback=self.run,
             parent=self.iface.mainWindow())
-            
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Generate DMED'),
-            callback=self.run,
-            parent=self.iface.mainWindow())
-
 
     def unload(self):
         for action in self.actions:

@@ -11,7 +11,7 @@
  *                                                                         *
  ***************************************************************************/
 """
-from qgis.core import QgsCoordinateReferenceSystem,  QgsCoordinateTransform
+from qgis.core import *
 from qgis.PyQt import uic
 from qgis.PyQt import QtNetwork
 from qgis.PyQt.QtCore import pyqtSlot,  Qt,  QUrl,  QFileInfo, QSettings, QRunnable, QThreadPool
@@ -115,66 +115,6 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
     def westBoundChanged(self, value):
         if self.lne_east.value() <= value:
             self.lne_east.setValue(value + 1)
-
-    # Delete This at some point
-    def get_tiles(self):
-            lat_diff = abs(int(self.lne_north.text()) - int(self.lne_south.text()))
-            lon_diff = abs(int(self.lne_east.text()) - int(self.lne_west.text()))
-            self.n_tiles = lat_diff * lon_diff
-            self.image_counter = 0
-            self.init_progress()
-            self.is_error = None
-
-            self.overall_progressBar.setMaximum(self.n_tiles)
-            self.overall_progressBar.setValue(0)
-            
-            for lat in range(int(self.lne_south.text()), int(self.lne_north.text())):
-                for lon in range(int(self.lne_west.text()), int(self.lne_east.text())):
-                        if lon < 10 and lon >= 0:
-                            lon_tx = "E00%s" % lon
-                        elif lon >= 10 and lon < 100:
-                            lon_tx = "E0%s" % lon
-                        elif lon >= 100:
-                            lon_tx = "E%s" % lon
-                        elif lon > -10 and lon < 0:
-                            lon_tx = "W00%s" % abs(lon)
-                        elif lon <= -10 and lon > -100:
-                            lon_tx = "W0%s" % abs(lon)
-                        elif lon <= -100:
-                            lon_tx = "W%s" % abs(lon)
-    
-                        if lat < 10 and lat >= 0:
-                            lat_tx = "N0%s" % lat
-                        elif lat >= 10 and lat < 100:
-                            lat_tx = "N%s" % lat
-                        elif lat > -10 and lat < 0:
-                            lat_tx = "S0%s" % abs(lat)
-                        elif lat <= -10 and lat > -100:
-                            lat_tx = "S%s" % abs(lat)
-                        
-                        try:
-                            self.set_progress()
-                            self.download_finished(False)
-                        except:
-                            QMessageBox.warning(None,  self.tr("Error"),  self.tr("Wrong definition of coordinates"))
-                            return False
-            
-            return True
-            
-            
-    def download_finished(self,  show_message=True,  abort=False):
-        if self.n_tiles == self.overall_progressBar.value() or abort:
-            if show_message:
-                if self.is_error != None:
-                    QMessageBox.information(None, 'Error',  self.is_error)
-                else:
-                    QMessageBox.information(None,  self.tr("Result"),  self.tr("Download completed"))
-                
-            self.button_box.setEnabled(True)
-            self.n_tiles = 0
-            self.image_counter = 0
-        
-        QApplication.restoreOverrideCursor()
             
     def lockUI(self):
         self.button_box.setEnabled(False)
@@ -242,12 +182,12 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
             self.workerThread.start()
             
     @pyqtSlot()
-    def btnGenerateDMED(self):
+    def on_btnGenerateDMED_clicked(self):
         if self.validForDMED():
             self.lockUI()
             
             pool = QThreadPool.globalInstance()
-            runnable = GenerateDMEDTask(self.lneOutputFolder.text())
+            runnable = GenerateDMEDTask(self.lneOutputFolder.text(), self)
             pool.start(runnable)
 
     @pyqtSlot()
@@ -383,7 +323,7 @@ class SRTMtoDTEDDialog(QDialog, FORM_CLASS):
         for level in levels:
             for tile in tiles:
                 if tile[TILE_EXISTS]:
-                    destinationPath = outDir + '/DTED' + str(level) + '/DTED/' + getLongitudeString(tile[TILE_LON]) + '/'
+                    destinationPath = outDir + '/DTED/' + getLongitudeString(tile[TILE_LON]) + '/'
                     destination = destinationPath + getLatitudeString(tile[TILE_LAT]) + '.dt' + str(level)
                     Path(destinationPath).mkdir(parents=True, exist_ok=True)
                     if not os.path.isfile(destination):
@@ -447,18 +387,18 @@ class DMEDHelper:
             return "S%s" % abs(lat)
 
     def getCoordinateString(self, lat, lon):
-        return getLatitudeString(lat) + getLongitudeString(lon)
+        return self.getLatitudeString(lat) + self.getLongitudeString(lon)
     
-    # Returns the highest resolution version, or None if not existing
+    # REturns the prefered tile resolution based on availability
     def getTile(self, lat, lon, directory):
-        fileName = directory + 'DTED/' + getLongitudeString(lon) + '/' + getLatitudeString(lat)
+        fileName = directory + 'DTED/' + self.getLongitudeString(lon) + '/' + self.getLatitudeString(lat)
         
-        if(os.path.isfile(fileName + '.dt2')):
-            return (fileName + '.dt2', gdal.Open(fileName + '.dt2'))
-        elif(os.path.isfile(fileName + '.dt1')):
+        if(os.path.isfile(fileName + '.dt1')):
             return (fileName + '.dt1', gdal.Open(fileName + '.dt1'))
         elif(os.path.isfile(fileName + '.dt0')):
             return (fileName + '.dt0', gdal.Open(fileName + '.dt0'))
+        elif(os.path.isfile(fileName + '.dt2')):
+            return (fileName + '.dt2', gdal.Open(fileName + '.dt2'))
             
         return (None, None)
 
@@ -517,54 +457,64 @@ class DMEDHelper:
     def saveAs(self, outFilePath):
         outString = self.toString()
         outStringAscii = outString.encode('ascii')
-        with open(inDir + 'DMED', 'wb') as f:
+        with open(outFilePath, 'wb') as f:
             f.write(outStringAscii)
 
 class GenerateDMEDTask(QRunnable):
     
-    def __init__(self, targetDir):
+    def __init__(self, targetDir, parentForm):
         super().__init__()
-        this.targetDir = targetDir
+        self.targetDir = targetDir
+        self.parentForm = parentForm
     
     def run(self):
-        northBound = -1000
-        southBound = 1000
-        eastBound = -1000
-        westBound = 1000
+        try:
+            northBound = -1000
+            southBound = 1000
+            eastBound = -1000
+            westBound = 1000
 
-        for root, dirs, files in os.walk(this.targetDir):
-            for currentFile in files:
-                exts = ('.dt0', '.dt1', '.dt2')
-                if currentFile.lower().endswith(exts):
-                    northingStr = currentFile[0:3]
-                    eastingStr = root[-4:]
-                    
-                    northing = int(northingStr[1:])
-                    if(northingStr[0].lower() == 's'):
-                        northing = 0 - northing
-                    
-                    easting = int(eastingStr[1:])
-                    if(eastingStr[0].lower() == 'w'):
-                        easting = 0 - easting
-                    
-                    # The +1 is because its bounds, and the position of a tile is based on the SW corner
-                    if(northing + 1 > northBound):
-                        northBound = northing + 1
-                    if(northing < southBound):
-                        southBound = northing
-                    if(easting + 1 > eastBound):
-                        eastBound = easting + 1
-                    if(easting < westBound):
-                        westBound = easting
+            #QgsMessageLog.logMessage(self.targetDir, 'DMED Tools', level=Qgis.Info)
 
-        #print('Preparing Buffer')
-        dmed = DMEDHelper(northBound, southBound, eastBound, westBound)
-        for lon in range(dmed.westBound, dmed.eastBound):
-            for lat in range(dmed.southBound, dmed.northBound):
-                dmed.processTile(lat, lon, this.targetDir)
-        #print('Writing DMED')
-        dmed.saveAs(this.targetDir + '/DMED')
+            for root, dirs, files in os.walk(self.targetDir):
+            
+                for currentFile in files:
+                                
+                    exts = ('.dt0', '.dt1', '.dt2')
+                    if currentFile.lower().endswith(exts):
+                        northingStr = currentFile[0:3]
+                        eastingStr = root[-4:]
+                        
+                        northing = int(northingStr[1:])
+                        if(northingStr[0].lower() == 's'):
+                            northing = 0 - northing
+                        
+                        easting = int(eastingStr[1:])
+                        if(eastingStr[0].lower() == 'w'):
+                            easting = 0 - easting
+                        
+                        # The +1 is because its bounds, and the position of a tile is based on the SW corner
+                        if(northing + 1 > northBound):
+                            northBound = northing + 1
+                        if(northing < southBound):
+                            southBound = northing
+                        if(easting + 1 > eastBound):
+                            eastBound = easting + 1
+                        if(easting < westBound):
+                            westBound = easting
 
-        #print('Done')
+            dmed = DMEDHelper(northBound, southBound, eastBound, westBound)
+            self.parentForm.overall_progressBar.setMaximum((northBound - southBound) * (eastBound - westBound))
+            self.parentForm.overall_progressBar.setValue(0)
+        
+            for lon in range(dmed.westBound, dmed.eastBound):
+                for lat in range(dmed.southBound, dmed.northBound):
+                    dmed.processTile(lat, lon, self.targetDir)
+                    dmed.saveAs(self.targetDir + '/DMED')
+                    self.parentForm.overall_progressBar.setValue(self.parentForm.overall_progressBar.value() + 1)
+        except Exception as exception:
+            raise exception
+        finally:            
+            self.parentForm.unlockUI()
 
 
